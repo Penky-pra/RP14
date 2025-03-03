@@ -1,0 +1,13 @@
+[project]
+name = "build-meta"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "fhir-pyrate",
+    "ruff>=0.9.9",
+]
+
+[tool.uv.sources]
+fhir-pyrate = { git = "https://github.com/UMEssen/FHIR-PYrate.git" }
