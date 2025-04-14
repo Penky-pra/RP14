@@ -46,11 +46,9 @@ In melanoma treatment, timely and accurate decisions are crucial but often hinde
 ## 📂 Data Structure
 
 - `data/`: Contains datasets and metadata
-- `notebooks/`: Jupyter notebooks for model experimentation
-- `src/`: Core codebase for preprocessing, modeling, and analysis
-- `docs/`: Project documentation including the six-month summary and presentation
-- `figures/`: Visuals and workflow diagrams from the slides and models
-
+- `datà collection`: 1. SHIP dashboard, supervises the patient data from Uniklinikum Essen
+                     2. Extraction of patient data from SHIP through Fhir Pyrate
+                     3.  
 ---
 
 ## 📈 Current Status
