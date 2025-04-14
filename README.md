@@ -55,39 +55,9 @@ In melanoma treatment, timely and accurate decisions are crucial but often hinde
 
 ## 📈 Current Status
 
-- Initial experiments using MIMIC-III and expired FHIR data completed
-- Awaiting ethical clearance to analyze active FHIR datasets from Uniklinikum Essen
-- Provisional pathways and pilot models under development
-- Process mining strategy under validation with BPMN modeling of patient journeys
+
 
 ---
 
-## 🧾 References
 
-See full citations in [docs/six_month_summary.pdf](docs/six_month_summary.pdf)
-
-Key sources:
-- WisPerMed RP14 Project Documentation
-- Beckmann et al. (2023). *Semantic integration of BPMN models and FHIR data...*
-- Masti & Bemporad (2021), Kingma & Welling (2019), Chiang (1993) – on modeling techniques
-
----
-
-## 👥 Contributors
-
-- **Praveen Jagan Nath**  
-  PhD Researcher  
-  Department of Computer Science, FH Dortmund  
-  Institute for Artificial Intelligence in Medicine (IKIM), University Hospital Essen
-
-- **Prof. Dr. Britta Böckmann**  
-  Supervisor, FH Dortmund / IKIM
-
----
-
-## 🏥 Acknowledgments
-
-This project is part of the **WisPerMed** initiative and supported by interdisciplinary collaborations between FH Dortmund and IKIM, Essen. Special thanks to the data science and clinical informatics teams for their insights into EHR integration and ethical handling.
-
----
 
