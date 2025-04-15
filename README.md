@@ -52,7 +52,6 @@ In melanoma treatment, timely and accurate decisions are crucial but often hinde
 2. Extraction of patient data from `SHIP` through `Fhir Pyrate`
 3. Extraction to create a full patient dataset with different Fhir resources from various sources under `Uniklinikum Essen` in one data set
 4. The proposed data set to prepare to contain IMP patients (inpatient) with around 3000 patient data
-5. 
   
 ---
 
