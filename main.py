@@ -72,6 +72,83 @@ def get_procedure_requests(
     )
 
     return df_procedure_requests
+def get_encounters(
+        df: pd.DataFrame, patient_id_col: str = "fhir_patient_id"
+    ) -> pd.DataFrame:
+    """Function to retrieve Encounter information."""
+
+    def _process_func(bundle: FHIRObj) -> List[Dict[str, str]]:
+        records = []
+        for entry in bundle.entry or []:
+            resource = entry.resource
+            records.append(
+                {
+                    "fhir_patient_id": resource.subject.reference.split("/")[-1],
+                    "encounter_id": resource.id,
+                    "status": getattr(resource, "status", None),
+                    "class": getattr(resource.clazz, "code", None)
+                    if hasattr(resource, "clazz") else None,
+                    "start": getattr(resource.period, "start", None)
+                    if hasattr(resource, "period") else None,
+                    "end": getattr(resource.period, "end", None)
+                    if hasattr(resource, "period") else None,
+                    "type_code": resource.type[0].coding[0].code
+                    if resource.type and resource.type[0].coding else None,
+                    "type_display": resource.type[0].coding[0].display
+                    if resource.type and resource.type[0].coding else None,
+                }
+            )
+        return records
+
+    df = df.drop_duplicates(subset=[patient_id_col])
+
+    df_encounters = search.trade_rows_for_dataframe(
+        df=df,
+        resource_type="Encounter",
+        request_params={"_count": "500", "_sort": "_id"},
+        df_constraints={"subject": patient_id_col},
+        with_ref=True,
+        process_function=_process_func,
+    )
+
+    return df_encounters
+def get_medication_requests(
+        df: pd.DataFrame, patient_id_col: str = "fhir_patient_id"
+    ) -> pd.DataFrame:
+    """Function to retrieve MedicationRequest information."""
+
+    def _process_func(bundle: FHIRObj) -> List[Dict[str, str]]:
+        records = []
+        for entry in bundle.entry or []:
+            resource = entry.resource
+            records.append(
+                {
+                    "fhir_patient_id": resource.subject.reference.split("/")[-1],
+                    "medication_id": resource.id,
+                    "status": getattr(resource, "status", None),
+                    "intent": getattr(resource, "intent", None),
+                    "authored_on": getattr(resource, "authoredOn", None),
+                    "medication_code": resource.medicationCodeableConcept.coding[0].code
+                    if resource.medicationCodeableConcept and resource.medicationCodeableConcept.coding else None,
+                    "medication_display": resource.medicationCodeableConcept.coding[0].display
+                    if resource.medicationCodeableConcept and resource.medicationCodeableConcept.coding else None,
+                }
+            )
+        return records
+
+    df = df.drop_duplicates(subset=[patient_id_col])
+
+    df_medications = search.trade_rows_for_dataframe(
+        df=df,
+        resource_type="MedicationRequest",
+        request_params={"_count": "500", "_sort": "_id"},
+        df_constraints={"subject": patient_id_col},
+        with_ref=True,
+        process_function=_process_func,
+    )
+
+    return df_medications
+
 def get_observation_requests(
         df: pd.DataFrame, patient_id_col: str = "fhir_patient_id"
     ) -> pd.DataFrame:
@@ -291,18 +368,18 @@ search = Pirate(
             print_request_url=True,
             num_processes=1,
         )
-#df_condition = get_all_melanoma_patients()
-#df_condition.to_csv('Condition.csv')
-#print(df_condition)
+df_condition = get_all_melanoma_patients()
+df_condition.to_csv('Condition.csv')
+print(df_condition)
 df_diagnosis = get_all_melanoma_patients()
 df_diagnosis.to_csv('Diagnosis.csv')
 print(df_diagnosis)
-#df_procedure = get_procedure_requests(df=df_diagnosis, patient_id_col= "fhir_patient_id")
-#df_procedure.to_csv('procedure.csv')
-#print(df_procedure)
-#df_encounters = get_encounters(df=df_diagnosis, patient_id_col= "fhir_patient_id")
-#df_encounters.to_csv('encounter.csv')
-#print(df_encounters)
+df_procedure = get_procedure_requests(df=df_diagnosis, patient_id_col= "fhir_patient_id")
+df_procedure.to_csv('procedure.csv')
+print(df_procedure)
+df_encounters = get_encounters(df=df_diagnosis, patient_id_col= "fhir_patient_id")
+df_encounters.to_csv('encounter.csv')
+print(df_encounters)
 df_observation= get_observation_requests(df=df_diagnosis, patient_id_col="fhir_patient_id")
 df_observation.to_csv('observation.csv')
 print(df_observation)
