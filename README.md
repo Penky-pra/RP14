@@ -47,10 +47,10 @@ In melanoma treatment, timely and accurate decisions are crucial but often hinde
 ## 📂 Data Structure
 
 - `data/`: Contains datasets and metadata
-- `datà collection`
-1. SHIP dashboard, supervises the patient data from Uniklinikum Essen
-2. Extraction of patient data from SHIP through Fhir Pyrate
-3. Extraction to create a full patient dataset with different Fhir resources from various sources under Uniklinikum Essen in one data set
+- `datà collection`:
+1. `SHIP dashboard`, supervises the patient data from `Uniklinikum Essen`
+2. Extraction of patient data from `SHIP` through `Fhir Pyrate`
+3. Extraction to create a full patient dataset with different Fhir resources from various sources under `Uniklinikum Essen` in one data set
 4.  
   
 ---
