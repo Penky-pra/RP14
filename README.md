@@ -40,6 +40,7 @@ In melanoma treatment, timely and accurate decisions are crucial but often hinde
 - `pm4py` for process mining and event log analysis and comparisons
 - Machine learning libraries: TensorFlow, PyTorch, Scikit-learn (to be reviewed)
 - Datasets: Prospective live FHIR datasets from IKIM
+- Data managing tool: KITE
 
 ---
 
@@ -48,7 +49,9 @@ In melanoma treatment, timely and accurate decisions are crucial but often hinde
 - `data/`: Contains datasets and metadata
 - `datà collection`: 1. SHIP dashboard, supervises the patient data from Uniklinikum Essen
                      2. Extraction of patient data from SHIP through Fhir Pyrate
-                     3.  
+                     3. Extraction to create a full patient dataset with different Fhir resources from various sources under Uniklinikum Essen in one data set
+                     4.  
+  
 ---
 
 ## 📈 Current Status
