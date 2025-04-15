@@ -3,7 +3,7 @@
 This repository presents the early phase of a research project focused on clinical pathway discovery for melanoma patients using Electronic Health Record (EHR) data. The research leverages stochastic modeling, deep learning, and process mining techniques to model patient trajectories and support clinical decision-making.
 
 > **RP14 Project | WisPerMed**  
-> Conducted by **Praveen Jagan Nath** under the supervision of **Prof. Dr. Britta Böckmann**  
+> Conducted by **Praveen Jagan Nath** 
 > Department of Computer Science, FH Dortmund  
 > Institute for Artificial Intelligence in Medicine (IKIM), University Hospital Essen
 
