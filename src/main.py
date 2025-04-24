@@ -62,6 +62,7 @@ def get_procedure_requests(
         request_params={
             "_count": "500",
             "_sort": "_id",
+            "class": "IMP",
         },
         df_constraints={
             "subject": patient_id_col,
