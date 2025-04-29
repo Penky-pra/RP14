@@ -5,6 +5,14 @@ from pathlib import Path
 from typing import List, Dict, Union, Tuple, Optional, Sequence
 from fhir_pyrate import Ahoy
 from fhir_pyrate.pirate import Pirate
+from dotenv import load_dotenv
+import time  # Import the time module for measuring execution time
+
+load_dotenv()  # Load variables from .env file
+
+FHIR_USER = os.getenv("FHIR_USER")
+if not FHIR_USER:
+    raise EnvironmentError("FHIR_USER is not set. Check your environment variables or .env file.")
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -26,32 +34,38 @@ def store_df(df, output_path, resource_name):
 
 
 class SimpleMetaPatientBuilder:
-    def __init__(self, base_url=None, output_dir="./output"):
+    def __init__(self, base_url=None, output_dir="./output", num_processes=20, resources_per_page=750, is_initial_test=False):
         """
         Initialize the SimpleMetaPatientBuilder.
 
         Parameters:
         - base_url: The FHIR server base URL (defaults to environment variable)
         - output_dir: Directory to store output files
+        - num_processes: Number of parallel processes for FHIR requests (adjusted default)
+        - resources_per_page: Number of resources to request per page (_count parameter) (adjusted default)
+        - is_initial_test: Flag for limiting initial extraction for testing
         """
         # Use environment variables if parameters not provided
         self.base_url = base_url or os.environ.get(
             "SEARCH_URL", "http://fhir-server/fhir"
         )
+        self.num_processes = num_processes
+        self.resources_per_page = resources_per_page
+        self.is_initial_test = is_initial_test
 
         # Setup authentication
         self.auth = Ahoy(
             auth_method="env",
-            username=os.environ.get("FHIR_USER", ""),
-            auth_url=os.environ.get("BASIC_AUTH", ""),
-            refresh_url=os.environ.get("REFRESH_AUTH", ""),
+            username=os.environ.get("FHIR_USER", "parnath"),
+            auth_url=os.environ.get("BASIC_AUTH", "https://ship.ume.de/app/Auth/v1/basicAuth"),
+            refresh_url=os.environ.get("REFRESH_AUTH", "https://ship.ume.de/app/Auth/v1/refresh"),
         )
 
         # Initialize Pirate
         self.search = Pirate(
             auth=self.auth,
             base_url=self.base_url,
-            num_processes=30,
+            num_processes=self.num_processes,
             print_request_url=False,
         )
 
@@ -65,122 +79,173 @@ class SimpleMetaPatientBuilder:
         resource_type: str,
         fhir_paths: Sequence[Union[str, Tuple[str, str]]],
         request_params: Optional[Dict[str, str]] = None,
-        limit: int = 10,
+        limit: int = 10,  # This limit might be overridden by resources_per_page
     ):
         """
         Generic extraction method for FHIR resources.
-
-        Parameters:
-        - output_name: Name for the output file
-        - resource_type: FHIR resource type
-        - fhir_paths: List of tuples (column_name, fhir_path)
-        - request_params: Additional request parameters
-
-        Returns:
-        - DataFrame containing the extracted data
         """
         logger.info(f"Extracting {resource_type} data")
-
+        start_time = time.time()
         output_path = self.output_dir / f"{output_name}.csv"
 
         # Set up request parameters
         if request_params is None:
             request_params = {}
 
-        request_params["_count"] = str(limit)
+        request_params["_count"] = str(self.resources_per_page)
 
-        # Use steal_bundles_to_dataframe for simple extraction
-        result = self.search.steal_bundles_to_dataframe(
-            resource_type=resource_type,
-            request_params=request_params,
-            fhir_paths=list(fhir_paths),
-        )
+        # --- Potential initial limit for testing ---
+        if self.is_initial_test:
+            request_params["_count"] = "100"
 
-        # Convert result to DataFrame if it's a dictionary
-        if isinstance(result, dict):
-            df = pd.DataFrame()
-            for key, value in result.items():
-                if isinstance(value, pd.DataFrame) and not value.empty:
-                    df = value
-                    break
-        else:
-            df = result
+        try:
+            result = self.search.steal_bundles_to_dataframe(
+                resource_type=resource_type,
+                request_params=request_params,
+                fhir_paths=list(fhir_paths),
+            )
 
-        if df.empty:
-            logger.warning(f"No {resource_type} data found")
-            return df
+            # Convert result to DataFrame
+            if isinstance(result, dict):
+                df = pd.DataFrame()
+                for key, value in result.items():
+                    if isinstance(value, pd.DataFrame) and not value.empty:
+                        df = value
+                        break
+            else:
+                df = result
 
-        # Store the data
-        store_df(df, output_path, resource_type)
+            if df.empty:
+                logger.warning(f"No {resource_type} data found")
+                return df, []  # Return empty list for patient IDs
 
-        return df
+            # Extract patient IDs if the resource has a subject
+            patient_ids = []
+            if "subject.reference.replace('Patient/', '')" in [path for _, path in fhir_paths]:
+                patient_ids = df["patient_id"].unique().tolist()
+                logger.info(f"Found {len(patient_ids)} unique patients in {resource_type}")
 
-    def extract_encounters(self):
-        """
-        Extract encounters from the FHIR server.
+            # Store the data
+            store_df(df, output_path, resource_type)
+            end_time = time.time()
+            logger.info(f"Finished extracting {resource_type} in {end_time - start_time:.2f} seconds.")
+            return df, patient_ids
 
-        Parameters:
-        - limit: Maximum number of encounters to retrieve
+        except Exception as e:
+            logger.error(f"Error during extraction of {resource_type}: {e}")
+            return pd.DataFrame(), []
 
-        Returns:
-        - DataFrame containing encounter data and list of patient IDs
-        """
-        # Define FHIR paths for encounter extraction
+    def extract_procedures(self):
+        """Extract procedures from the FHIR server."""
         fhir_paths = [
-            ("encounter_id", "id"),
+            ("procedure_id", "id"),
             ("patient_id", "subject.reference.replace('Patient/', '')"),
             ("status", "status"),
-            ("class_code", "class.code"),
-            ("class_display", "class.display"),
-            ("type_code", "type[0].coding[0].code"),
-            ("type_display", "type[0].coding[0].display"),
-            ("start_date", "period.start"),
-            ("end_date", "period.end"),
+            ("code_code", "code.coding[0].code"),
+            ("code_display", "code.coding[0].display"),
+            ("performed_date_time", "performedDateTime"),
         ]
-
-        # Restore encounter parameters
-        # TODO: Change this to your needs...
-        encounter_params = {
-            "_count": 5000,
-            "_sort": "-date",
-            "subject": "000324ea9922d3e6089d85febef322308aa07d1ce565064aa4b2341fa7dd4cbc",
-        }
-
-        # Extract encounters
-        encounters_df = self.default_extraction(
-            output_name="encounters",
-            resource_type="Encounter",
+        procedure_params = {}
+        return self.default_extraction(
+            output_name="procedures",
+            resource_type="Procedure",
             fhir_paths=fhir_paths,
-            request_params=encounter_params,
+            request_params=procedure_params,
         )
 
-        if encounters_df.empty:
-            logger.warning("No encounters found")
-            return encounters_df, []
+    def extract_observations(self):
+        """Extract observations from the FHIR server."""
+        fhir_paths = [
+            ("observation_id", "id"),
+            ("patient_id", "subject.reference.replace('Patient/', '')"),
+            ("status", "status"),
+            ("code_code", "code.coding[0].code"),
+            ("code_display", "code.coding[0].display"),
+            ("effective_date_time", "effectiveDateTime"),
+            ("value_quantity", "valueQuantity.value"),
+            ("value_unit", "valueQuantity.unit"),
+        ]
+        observation_params = {}
+        return self.default_extraction(
+            output_name="observations",
+            resource_type="Observation",
+            fhir_paths=fhir_paths,
+            request_params=observation_params,
+        )
 
-        # Extract unique patient IDs
-        patient_ids = encounters_df["patient_id"].unique().tolist()
-        logger.info(f"Found {len(patient_ids)} unique patients in encounters")
+    def extract_diagnoses(self):
+        """Extract diagnoses (Condition resources) from the FHIR server."""
+        fhir_paths = [
+            ("diagnosis_id", "id"),
+            ("patient_id", "subject.reference.replace('Patient/', '')"),
+            ("clinical_status", "clinicalStatus.coding[0].display"),
+            ("verification_status", "verificationStatus.coding[0].display"),
+            ("code_code", "code.coding[0].code"),
+            ("code_display", "code.coding[0].display"),
+            ("onset_date_time", "onsetDateTime"),
+        ]
+        diagnosis_params = {}
+        return self.default_extraction(
+            output_name="diagnoses",
+            resource_type="Condition",  # Condition is used for diagnoses
+            fhir_paths=fhir_paths,
+            request_params=diagnosis_params,
+        )
 
-        return encounters_df, patient_ids
+    def extract_medications(self):
+        """Extract Medication resources from the FHIR server."""
+        fhir_paths = [
+            ("medication_id", "id"),
+            ("code_code", "code.coding[0].code"),
+            ("code_display", "code.coding[0].display"),
+            ("form_code", "form.coding[0].code"),
+            ("form_display", "form.coding[0].display"),
+        ]
+        medication_params = {}  # Medications don't directly link to a patient in the same way
+        return self.default_extraction(
+            output_name="medications",
+            resource_type="Medication",
+            fhir_paths=fhir_paths,
+            request_params=medication_params,
+        )
+
+    def extract_medication_statements(self):
+        """
+        Extract medication statements from the FHIR server.
+        **Consider adding filters here for performance.**
+        """
+        fhir_paths = [
+            ("medication_statement_id", "id"),
+            ("patient_id", "subject.reference.replace('Patient/', '')"),
+            ("status", "status"),
+            ("effective_date_time", "effectiveDateTime"),
+            ("medication_code", "medicationCodeableConcept.coding[0].code"),
+            ("medication_display", "medicationCodeableConcept.coding[0].display"),
+            ("dosage_instruction", "dosage[0].text"),
+        ]
+        medication_statement_params = {
+            "_count": self.resources_per_page,
+            # Add filters based on your needs and server capabilities:
+            # "effectiveDateTime": "gt2024-01-01",
+            # "status": "active",
+            # "patient": "Patient/some-patient-id",
+        }
+        return self.default_extraction(
+            output_name="medication_statements",
+            resource_type="MedicationStatement",
+            fhir_paths=fhir_paths,
+            request_params=medication_statement_params,
+        )
 
     def build_meta_patients(self, patient_ids: List[str]):
         """
         Build meta patients for the given patient IDs.
-
-        Parameters:
-        - patient_ids: List of patient IDs
-
-        Returns:
-        - DataFrame containing meta patient data
         """
         logger.info(f"Building meta patients for {len(patient_ids)} patients")
-
-        # Create a DataFrame with patient IDs
-        patient_ids_unique = list(set(patient_ids))  # Convert to set and back to list
+        start_time = time.time()
+        patient_ids_unique = list(set(patient_ids))  # Ensure uniqueness
         patients_df = pd.DataFrame({"patient_id": patient_ids_unique})
 
-        # Use trade_rows_for_dataframe to get linked patients
         try:
             result = self.search.trade_rows_for_dataframe(
                 df=patients_df,
@@ -195,8 +260,7 @@ class SimpleMetaPatientBuilder:
                 ],
                 with_ref=True,
             )
-
-            # Convert result to DataFrame if it's a dictionary
+            # Process the result into meta_patients_df (as before)
             if isinstance(result, dict):
                 meta_patients_df = pd.DataFrame()
                 for key, value in result.items():
@@ -206,70 +270,89 @@ class SimpleMetaPatientBuilder:
             else:
                 meta_patients_df = result
 
-            # Process the DataFrame
-            if (
-                not meta_patients_df.empty
-                and "linked_patient_id" in meta_patients_df.columns
-            ):
-                # Explode linked_patient_id and clean up references
+            if not meta_patients_df.empty and "linked_patient_id" in meta_patients_df.columns:
                 meta_patients_df = meta_patients_df.explode("linked_patient_id")
-                meta_patients_df["linked_patient_id"] = meta_patients_df[
-                    "linked_patient_id"
-                ].apply(lambda x: extract_id(x) if pd.notna(x) else None)
-
-            # For patients without links, use their own ID as linked_patient_id
-            if "linked_patient_id" not in meta_patients_df.columns:
-                meta_patients_df["linked_patient_id"] = meta_patients_df["patient_id"]
-            else:
-                meta_patients_df["linked_patient_id"] = meta_patients_df.apply(
-                    lambda x: x.linked_patient_id
-                    if pd.notna(x.linked_patient_id)
-                    else x.patient_id,
-                    axis=1,
+                meta_patients_df["linked_patient_id"] = meta_patients_df["linked_patient_id"].apply(
+                    lambda x: extract_id(x) if pd.notna(x) else None
                 )
+            elif not meta_patients_df.empty:
+                meta_patients_df["linked_patient_id"] = meta_patients_df["patient_id"]
+                meta_patients_df["meta_patient"] = meta_patients_df["patient_id"]
+            else:
+                meta_patients_df = pd.DataFrame()  # Empty DataFrame if no results
 
         except Exception as e:
             logger.error(f"Error building meta patients: {e}")
-            # Fallback: create a simple DataFrame with self-links
-            meta_patients_df = patients_df.copy()
-            meta_patients_df["linked_patient_id"] = meta_patients_df["patient_id"]
-            meta_patients_df["meta_patient"] = meta_patients_df["patient_id"]
+            meta_patients_df = pd.DataFrame()  # Return empty DataFrame on error
 
         # Store meta patients
         meta_patient_path = self.output_dir / "meta_patients.csv"
-        store_df(meta_patients_df, meta_patient_path, "meta_patients")
+        if not meta_patients_df.empty:
+            store_df(meta_patients_df, meta_patient_path, "meta_patients")
+        else:
+            logger.warning("No meta-patient data to store.")
 
+        end_time = time.time()
+        logger.info(f"Finished building meta patients in {end_time - start_time:.2f} seconds.")
         return meta_patients_df
 
 
 def main():
     """
-    Main function to demonstrate the workflow.
-
-    Workflow:
-    1. Extract encounters
-    2. Build meta patients for the patient IDs from these encounters
+    Main function to demonstrate the workflow for various resources.
     """
-    # Initialize builder
-    builder = SimpleMetaPatientBuilder()
+    start_time = time.time()
+    # Initialize builder with adjusted num_processes and resources_per_page
+    builder = SimpleMetaPatientBuilder(num_processes=20, resources_per_page=750, is_initial_test=False)
+    # builder = SimpleMetaPatientBuilder(num_processes=5, resources_per_page=100, is_initial_test=True) # For initial testing
 
-    # Step 1: Extract encounters (this cloud be any resouce)
-    encounters_df, patient_ids = builder.extract_encounters()
-    logger.info(
-        f"Extracted {len(encounters_df)} encounters for {len(patient_ids)} patients"
-    )
+    # Extract resources
+    procedures_df, procedure_patient_ids = builder.extract_procedures()
+    observations_df, observation_patient_ids = builder.extract_observations()
+    diagnoses_df, diagnosis_patient_ids = builder.extract_diagnoses()
+    medications_df, _ = builder.extract_medications()
+    medication_statements_df, medication_statement_patient_ids = builder.extract_medication_statements()
 
-    if not patient_ids:
-        logger.warning("No patient IDs found in encounters, cannot proceed")
-        return pd.DataFrame()
+    # Combine all patient IDs (ensure uniqueness)
+    all_patient_ids = list(set(
+        procedure_patient_ids + observation_patient_ids + diagnosis_patient_ids + medication_statement_patient_ids
+    ))
+    logger.info(f"Found {len(all_patient_ids)} unique patients across all patient-linked resources")
 
-    # Step 2: Build meta patients
-    meta_patients_df = builder.build_meta_patients(patient_ids)
-    logger.info(f"Built {len(meta_patients_df)} meta patient records")
+    if all_patient_ids:
+        # Build meta patients
+        meta_patients_df = builder.build_meta_patients(all_patient_ids)
 
-    # Now you can use meta_patients_df for further processing
-    # Just do an inner join with the meta_patients_df on linked_patient_id and patient_id of whatever df you have
-    # Now you can loop through meta_patient and do whatever...
+        # Merge the extracted data with meta patients
+        if not procedures_df.empty and not meta_patients_df.empty:
+            merged_procedures_df = pd.merge(
+                procedures_df, meta_patients_df, how="inner", left_on="patient_id", right_on="linked_patient_id", suffixes=('_procedure', '_meta_patient')
+            )
+            store_df(merged_procedures_df, builder.output_dir / "procedures_with_meta_patients.csv", "procedures_with_meta_patients")
+
+        if not observations_df.empty and not meta_patients_df.empty:
+            merged_observations_df = pd.merge(
+                observations_df, meta_patients_df, how="inner", left_on="patient_id", right_on="linked_patient_id", suffixes=('_observation', '_meta_patient')
+            )
+            store_df(merged_observations_df, builder.output_dir / "observations_with_meta_patients.csv", "observations_with_meta_patients")
+
+        if not diagnoses_df.empty and not meta_patients_df.empty:
+            merged_diagnoses_df = pd.merge(
+                diagnoses_df, meta_patients_df, how="inner", left_on="patient_id", right_on="linked_patient_id", suffixes=('_diagnosis', '_meta_patient')
+            )
+            store_df(merged_diagnoses_df, builder.output_dir / "diagnoses_with_meta_patients.csv", "diagnoses_with_meta_patients")
+
+        if not medication_statements_df.empty and not meta_patients_df.empty:
+            merged_medication_statements_df = pd.merge(
+                medication_statements_df, meta_patients_df, how="inner", left_on="patient_id", right_on="linked_patient_id", suffixes=('_medication_statement', '_meta_patient')
+            )
+            store_df(merged_medication_statements_df, builder.output_dir / "medication_statements_with_meta_patients.csv", "medication_statements_with_meta_patients")
+
+    else:
+        logger.warning("No patient IDs found, skipping meta-patient building and merging.")
+
+    end_time = time.time()
+    logger.info(f"Total execution time: {end_time - start_time:.2f} seconds.")
 
 
 if __name__ == "__main__":
